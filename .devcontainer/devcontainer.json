@@ -1,0 +1,38 @@
+{
+	"name": "DSL-2542B Buildroot",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+
+	// Repo jest montowane pod tą samą ścieżką co na hoście (WSL). Buildroot
+	// zapisuje ścieżki absolutne w output/Makefile i output/.br2-external.mk,
+	// więc ten sam katalog output/ działa i w kontenerze, i poza nim.
+	"workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+	"workspaceFolder": "${localWorkspaceFolder}",
+
+	"mounts": [
+		// Pobrane źródła (gcc, kernel, busybox...) przeżywają przebudowę
+		// kontenera. Kilkaset MB, które nie trzeba ściągać ponownie.
+		"source=dsl2542b-br-dl,target=/home/builder/br-dl,type=volume"
+	],
+
+	"containerEnv": {
+		// Nadpisuje BR2_DL_DIR z .config (domyślnie $(TOPDIR)/dl, czyli w submodule).
+		"BR2_DL_DIR": "/home/builder/br-dl"
+	},
+
+	"remoteUser": "builder",
+	"updateRemoteUserUID": true,
+
+	"postCreateCommand": "git submodule update --init",
+
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-vscode.cpptools",
+				"ms-vscode.makefile-tools",
+				"timonwong.shellcheck"
+			]
+		}
+	}
+}

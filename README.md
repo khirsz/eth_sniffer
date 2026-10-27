@@ -24,6 +24,21 @@ make 2>&1 | tee build.log
 ```
 
 Wynik: `output/images/dsl2542b-ramboot.elf` (start z RAM przez TFTP z CFE).
+
+### W kontenerze (Dev Containers)
+
+`.devcontainer/` opisuje obraz Debiana 13 z pakietami, których Buildroot
+wymaga od hosta. Cross-toolchain i tak buduje sam Buildroot.
+VS Code: *Dev Containers: Reopen in Container*, a potem w terminalu
+kontenera te same komendy co wyżej.
+
+- Repo jest montowane pod **tą samą ścieżką** co na hoście, bo Buildroot
+  wpisuje ścieżki absolutne do `output/`. Dzięki temu `output/` działa
+  po obu stronach.
+- Pobrane źródła trafiają do wolumenu `dsl2542b-br-dl` (`BR2_DL_DIR`),
+  więc przebudowa kontenera nie wymusza ponownego pobierania.
+- Pod WSL potrzebny jest Docker Desktop z włączoną integracją dla tej
+  dystrybucji (Settings → Resources → WSL integration).
 Szczegóły, mapa pamięci i rozwiązywanie problemów:
 [br2-dsl2542b/README.md](br2-dsl2542b/README.md).
 
