@@ -1,0 +1,65 @@
+# Fragment konfiguracji kernela nakładany na arch/mips/configs/bcm63xx_defconfig.
+# Buildroot: BR2_LINUX_KERNEL_DEFCONFIG="bcm63xx" + BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES.
+#
+# Zasada: defconfig z mainline to "rozsądny start dla całej rodziny BCM63xx",
+# a ten plik to tylko RÓŻNICE potrzebne dla DSL-2542B (BCM6338, 16 MB RAM).
+
+# --- Tylko nasz SoC (mniejszy kernel) ---
+CONFIG_BCM63XX_CPU_6338=y
+# CONFIG_BCM63XX_CPU_6345 is not set
+# CONFIG_BCM63XX_CPU_6348 is not set
+# CONFIG_BCM63XX_CPU_6358 is not set
+
+# --- Wyłączamy to, czego płytka nie ma ---
+# CONFIG_PCI is not set
+# CONFIG_PCCARD is not set
+# CONFIG_USB_SUPPORT is not set
+# CONFIG_WIRELESS is not set
+# CONFIG_WLAN is not set
+# CONFIG_CFG80211 is not set
+# CONFIG_MAC80211 is not set
+# CONFIG_MODULES is not set
+
+# --- Rozmiar ma znaczenie: 16 MB RAM, 4 MB flash ---
+CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+# CONFIG_IPV6 is not set
+# CONFIG_DEBUG_KERNEL is not set
+# CONFIG_KALLSYMS is not set
+
+# --- Wymagania userspace (uClibc-ng + BusyBox) ---
+# bcm63xx_defconfig wyłącza je dla oszczędności, ale libc z wątkami NPTL
+# potrzebuje futexów, a skrypty startowe Buildroota montują tmpfs i devtmpfs.
+CONFIG_FUTEX=y
+CONFIG_EPOLL=y
+CONFIG_SHMEM=y
+CONFIG_TMPFS=y
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_UNIX98_PTYS=y
+CONFIG_PACKET=y
+
+# --- initramfs: rootfs wbudowany w kernel, bez kompresji ---
+# Cały obraz i tak kompresuje LZMA loader, więc druga kompresja
+# tylko by spowolniła start.
+#
+# INITRAMFS_SOURCE ustawia też sam Buildroot, ale robi to dopiero PO pierwszym
+# "olddefconfig". Bez tej linii wybór kompresji poniżej byłby niewidoczny
+# (zależy od niepustego INITRAMFS_SOURCE), olddefconfig by go wyrzucił,
+# a kernel wróciłby do domyślnego gzip.
+CONFIG_BLK_DEV_INITRD=y
+CONFIG_INITRAMFS_SOURCE="${BR_BINARIES_DIR}/rootfs.cpio"
+CONFIG_INITRAMFS_COMPRESSION_NONE=y
+
+# --- Diagnostyka startu na UART ---
+CONFIG_EARLY_PRINTK=y
+CONFIG_PRINTK_TIME=y
+CONFIG_MAGIC_SYSRQ=y
+
+# --- Diody LED (płytka 96338W rejestruje je w board_bcm963xx.c) ---
+CONFIG_NEW_LEDS=y
+CONFIG_LEDS_CLASS=y
+CONFIG_LEDS_GPIO=y
+CONFIG_LEDS_TRIGGERS=y
+CONFIG_LEDS_TRIGGER_DEFAULT_ON=y
+CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+CONFIG_LEDS_TRIGGER_NETDEV=y

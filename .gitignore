@@ -1,0 +1,13 @@
+# Wyniki builda Buildroota (make O=output)
+/output/
+
+# Środowisko Pythona dla dump_flash.py
+/venv/
+
+# Zrzuty flasha routera: firmware D-Link + NVRAM z MAC-iem i konfiguracją
+*.bin
+debug_*.txt
+
+# Datasheet Broadcoma (nie do redystrybucji) i stare archiwum drzewa
+*.pdf
+br2-dsl2542b.tar.gz
