@@ -4,20 +4,20 @@
 		"dockerfile": "Dockerfile"
 	},
 
-	// Repo jest montowane pod tą samą ścieżką co na hoście (WSL). Buildroot
-	// zapisuje ścieżki absolutne w output/Makefile i output/.br2-external.mk,
-	// więc ten sam katalog output/ działa i w kontenerze, i poza nim.
+	// The repo is mounted at the same path as on the host (WSL). Buildroot
+	// stores absolute paths in output/Makefile and output/.br2-external.mk,
+	// so the same output/ directory works both inside and outside the container.
 	"workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
 	"workspaceFolder": "${localWorkspaceFolder}",
 
 	"mounts": [
-		// Pobrane źródła (gcc, kernel, busybox...) przeżywają przebudowę
-		// kontenera. Kilkaset MB, które nie trzeba ściągać ponownie.
+		// Downloaded sources (gcc, kernel, busybox...) survive a container
+		// rebuild. A few hundred MB that do not need to be fetched again.
 		"source=dsl2542b-br-dl,target=/home/builder/br-dl,type=volume"
 	],
 
 	"containerEnv": {
-		// Nadpisuje BR2_DL_DIR z .config (domyślnie $(TOPDIR)/dl, czyli w submodule).
+		// Overrides BR2_DL_DIR from .config (default $(TOPDIR)/dl, i.e. inside the submodule).
 		"BR2_DL_DIR": "/home/builder/br-dl"
 	},
 
@@ -29,10 +29,43 @@
 	"customizations": {
 		"vscode": {
 			"extensions": [
+				// C/C++, Make, shell
 				"ms-vscode.cpptools",
+				"ms-vscode.cpptools-extension-pack",
+				"ms-vscode.cpptools-themes",
+				"ms-vscode.cpp-devtools",
+				"ms-vscode.cmake-tools",
 				"ms-vscode.makefile-tools",
-				"timonwong.shellcheck"
-			]
+				"timonwong.shellcheck",
+				// Python
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-python.debugpy",
+				"ms-python.vscode-python-envs",
+				"donjayamanne.python-extension-pack",
+				"donjayamanne.python-environment-manager",
+				"kevinrose.vsc-python-indent",
+				"njpwerner.autodocstring",
+				// Git, containers, Claude
+				"eamodio.gitlens",
+				"mhutchie.git-graph",
+				"ms-azuretools.vscode-containers",
+				"anthropic.claude-code"
+			],
+			"settings": {
+				// The only Python in the project is dump_flash.py. Without this,
+				// Pylance indexes thousands of .py files from the Buildroot
+				// submodule and from output/ (host tools, kernel scripts, gcc).
+				// Setting exclude replaces the defaults, so they are repeated here.
+				"python.analysis.exclude": [
+					"**/node_modules",
+					"**/__pycache__",
+					"**/.*",
+					"buildroot",
+					"output",
+					"venv"
+				]
+			}
 		}
 	}
 }
