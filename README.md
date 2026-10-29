@@ -1,19 +1,20 @@
-# eth_sniffer: D-Link DSL-2542B jako sprzętowy sniffer Ethernet
+# eth_sniffer: D-Link DSL-2542B as a hardware Ethernet sniffer
 
-Stary router ADSL (SoC BCM6338, switch BCM5325E) z własnym Linuksem
-z Buildroota. Po starcie system sam włącza w switchu port mirroring:
-ruch z wybranego portu LAN jest kopiowany na port z laptopem i Wiresharkiem.
+An old ADSL router (BCM6338 SoC, BCM5325E switch) running its own Linux
+built with Buildroot. At boot the system enables port mirroring in the switch:
+traffic from a chosen LAN port is copied to the port with the laptop running
+Wireshark.
 
-## Zawartość
+## Contents
 
 ```
 eth_sniffer/
-├── buildroot/       submoduł: Buildroot 2026.02.3 (bez zmian)
-├── br2-dsl2542b/    drzewo br2-external: defconfig, kernel, loader CFE, swmirror
-└── dump_flash.py    zrzut flasha przez UART (dumpmem w stockowym firmware)
+├── buildroot/       submodule: Buildroot 2026.02.3 (unmodified)
+├── br2-dsl2542b/    br2-external tree: defconfig, kernel, CFE loader, swmirror
+└── dump_flash.py    flash dump over the UART (dumpmem in the stock firmware)
 ```
 
-## Budowanie
+## Building
 
 ```sh
 git clone --recurse-submodules https://github.com/khirsz/eth_sniffer.git
@@ -23,26 +24,27 @@ cd output
 make 2>&1 | tee build.log
 ```
 
-Wynik: `output/images/dsl2542b-ramboot.elf` (start z RAM przez TFTP z CFE).
+Output: `output/images/dsl2542b-ramboot.elf` (boot from RAM over TFTP from CFE).
 
-### W kontenerze (Dev Containers)
+### In a container (Dev Containers)
 
-`.devcontainer/` opisuje obraz Debiana 13 z pakietami, których Buildroot
-wymaga od hosta. Cross-toolchain i tak buduje sam Buildroot.
-VS Code: *Dev Containers: Reopen in Container*, a potem w terminalu
-kontenera te same komendy co wyżej.
+`.devcontainer/` describes a Debian 13 image with the packages Buildroot
+requires from the host. Buildroot builds the cross-toolchain itself anyway.
+VS Code: *Dev Containers: Reopen in Container*, then run the same commands
+as above in the container terminal.
 
-- Repo jest montowane pod **tą samą ścieżką** co na hoście, bo Buildroot
-  wpisuje ścieżki absolutne do `output/`. Dzięki temu `output/` działa
-  po obu stronach.
-- Pobrane źródła trafiają do wolumenu `dsl2542b-br-dl` (`BR2_DL_DIR`),
-  więc przebudowa kontenera nie wymusza ponownego pobierania.
-- Pod WSL potrzebny jest Docker Desktop z włączoną integracją dla tej
-  dystrybucji (Settings → Resources → WSL integration).
-Szczegóły, mapa pamięci i rozwiązywanie problemów:
+- The repo is mounted at **the same path** as on the host, because Buildroot
+  writes absolute paths into `output/`. This way `output/` works on both
+  sides.
+- Downloaded sources go to the `dsl2542b-br-dl` volume (`BR2_DL_DIR`),
+  so rebuilding the container does not force a new download.
+- Under WSL you need Docker Desktop with integration enabled for this
+  distribution (Settings → Resources → WSL integration).
+
+Details, the memory map and troubleshooting:
 [br2-dsl2542b/README.md](br2-dsl2542b/README.md).
 
-## Aktualizacja Buildroota
+## Updating Buildroot
 
 ```sh
 git -C buildroot fetch --tags

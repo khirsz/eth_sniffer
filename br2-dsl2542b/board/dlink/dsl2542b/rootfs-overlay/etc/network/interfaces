@@ -1,4 +1,4 @@
-# Statyczny adres routera w sieci LAN (ifupdown z BusyBoxa, skrypt S40network).
+# Static router address on the LAN (BusyBox ifupdown, S40network script).
 auto lo
 iface lo inet loopback
 

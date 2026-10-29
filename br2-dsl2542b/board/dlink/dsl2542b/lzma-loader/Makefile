@@ -1,24 +1,24 @@
-# LZMA loader dla CFE (BCM63xx) - budowanie poza OpenWrt.
+# LZMA loader for CFE (BCM63xx) - built outside OpenWrt.
 #
-# Na podstawie target/linux/brcm63xx/image/lzma-loader z OpenWrt 18.06
-# (Gabor Juhos, Jonas Gorski; GPL-2.0). Zmiany: samodzielny Makefile
-# z budowaniem do katalogu O=, bez flagi -fhonour-copts (jest tylko w gcc
-# z OpenWrt), lokalne asm.h/regdef.h zamiast nagłówków kernela.
+# Based on target/linux/brcm63xx/image/lzma-loader from OpenWrt 18.06
+# (Gabor Juhos, Jonas Gorski; GPL-2.0). Changes: standalone Makefile
+# building into an O= directory, no -fhonour-copts flag (it only exists in
+# OpenWrt's gcc), local asm.h/regdef.h instead of kernel headers.
 #
-# Wywołanie (robi to post-image.sh):
-#   make -C <ten katalog> O=<katalog roboczy> CROSS_COMPILE=<prefiks> \
+# Invocation (done by post-image.sh):
+#   make -C <this directory> O=<work directory> CROSS_COMPILE=<prefix> \
 #        LOADADDR=0x80010000 LZMA_TEXT_START=0x80a00000 \
 #        LOADER_DATA=<kernel.lzma>
 #
-# Wynik: $(O)/loader.elf
+# Output: $(O)/loader.elf
 #
-# Jak to działa:
-#   1. loader.bin = kod loadera + skompresowany kernel, zlinkowany pod
-#      LZMA_TEXT_START (tam będzie DZIAŁAŁ).
-#   2. loader.elf = ten sam blob opakowany w ELF, który CFE ŁADUJE pod
-#      LOADADDR (nisko w RAM, poniżej pamięci zajętej przez samo CFE).
-#   3. Po starcie kod sam się kopiuje pod LZMA_TEXT_START (head.S),
-#      rozpakowuje kernel pod LOADADDR i skacze do niego.
+# How it works:
+#   1. loader.bin = loader code + compressed kernel, linked at
+#      LZMA_TEXT_START (where it will RUN).
+#   2. loader.elf = the same blob wrapped in an ELF that CFE LOADS at
+#      LOADADDR (low in RAM, below the memory used by CFE itself).
+#   3. After starting, the code copies itself to LZMA_TEXT_START (head.S),
+#      decompresses the kernel to LOADADDR and jumps to it.
 
 CROSS_COMPILE	?=
 LOADADDR	?= 0x80010000
@@ -35,18 +35,18 @@ OBJCOPY		:= $(CROSS_COMPILE)objcopy
 OBJDUMP		:= $(CROSS_COMPILE)objdump
 
 ifeq ($(strip $(LOADER_DATA)),)
-$(error Podaj LOADER_DATA=<plik z kernelem skompresowanym LZMA>)
+$(error Set LOADER_DATA=<LZMA-compressed kernel file>)
 endif
 
 BIN_FLAGS	:= -O binary -R .reginfo -R .note -R .comment -R .mdebug \
 		   -R .MIPS.abiflags -S
 
-# -G 0, -mno-abicalls, -fno-pic: kod bez GOT i bez gp-relative danych,
-#   bo nie ma tu dynamicznego linkera ani startowego kodu libc.
-# -ffreestanding: brak libc, tylko nagłówki kompilatora (stddef, stdarg).
-# -march=mips32: rdzeń BMIPS3300 w BCM6338 to MIPS32 rev1.
-# -fno-tree-loop-distribute-patterns: nowsze gcc potrafią zamienić pętlę
-#   na wywołanie memset/memcpy, a tu nie ma libc, która by je dostarczyła.
+# -G 0, -mno-abicalls, -fno-pic: code without a GOT and without gp-relative
+#   data, since there is no dynamic linker or libc startup code here.
+# -ffreestanding: no libc, only compiler headers (stddef, stdarg).
+# -march=mips32: the BMIPS3300 core in the BCM6338 is MIPS32 rev1.
+# -fno-tree-loop-distribute-patterns: newer gcc can turn a loop into a
+#   memset/memcpy call, and there is no libc here to provide them.
 CFLAGS		:= -D__KERNEL__ -Wall -Wstrict-prototypes -Wno-trigraphs -Os \
 		   -fno-strict-aliasing -fno-common -fomit-frame-pointer -G 0 \
 		   -mno-abicalls -fno-pic -ffunction-sections -pipe \
@@ -77,8 +77,8 @@ $(OUT)/%.o: $(SRC)/%.c | $(OUT)
 $(OUT)/%.o: $(SRC)/%.S | $(OUT)
 	$(CC) $(ASFLAGS) -c -o $@ $<
 
-# Skompresowany kernel jako surowe dane w sekcji .data.lzma
-# (symbole _lzma_data_start/_lzma_data_end definiuje lzma-data.lds).
+# The compressed kernel as raw data in the .data.lzma section
+# (the _lzma_data_start/_lzma_data_end symbols are defined by lzma-data.lds).
 $(OUT)/data.o: $(LOADER_DATA) | $(OUT)
 	cp $< $(OUT)/payload.lzma
 	cd $(OUT) && $(LD) -r -b binary --oformat $(O_FORMAT) \

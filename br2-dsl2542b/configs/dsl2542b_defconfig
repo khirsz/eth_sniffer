@@ -1,19 +1,19 @@
 # D-Link DSL-2542B: BCM6338 (BMIPS3300), 16 MB RAM, 4 MB NOR, switch BCM5325E
 #
-# Użycie:
-#   make BR2_EXTERNAL=/ścieżka/do/br2-dsl2542b dsl2542b_defconfig
+# Usage:
+#   make BR2_EXTERNAL=/path/to/br2-dsl2542b dsl2542b_defconfig
 #   make
 
-# --- Architektura ---
-# BMIPS3300 = MIPS32 release 1, big-endian, bez FPU (soft-float).
+# --- Architecture ---
+# BMIPS3300 = MIPS32 release 1, big-endian, no FPU (soft-float).
 BR2_mips=y
 BR2_mips_32=y
 BR2_MIPS_SOFT_FLOAT=y
 
-# --- Toolchain budowany przez Buildroot ---
-# uClibc-ng: mała libc, dobra dla 16 MB RAM.
+# --- Toolchain built by Buildroot ---
+# uClibc-ng: a small libc, a good fit for 16 MB of RAM.
 BR2_TOOLCHAIN_BUILDROOT_UCLIBC=y
-# Nagłówki kernela dla libc = ta sama wersja co budowany kernel.
+# Kernel headers for the libc = same version as the kernel being built.
 BR2_KERNEL_HEADERS_AS_KERNEL=y
 BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_12=y
 BR2_OPTIMIZE_S=y
@@ -34,13 +34,13 @@ BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.12.91"
 BR2_LINUX_KERNEL_USE_DEFCONFIG=y
 BR2_LINUX_KERNEL_DEFCONFIG="bcm63xx"
 BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_DSL2542B_PATH)/board/dlink/dsl2542b/linux.fragment"
-# Surowy obraz (objcopy -O binary z vmlinux); post-image.sh kompresuje go
-# i opakowuje w loader zrozumiały dla CFE.
+# Raw image (objcopy -O binary of vmlinux); post-image.sh compresses it
+# and wraps it in a loader that CFE understands.
 BR2_LINUX_KERNEL_VMLINUX_BIN=y
 
-# --- System plików: initramfs wbudowany w kernel ---
+# --- Filesystem: initramfs built into the kernel ---
 BR2_TARGET_ROOTFS_INITRAMFS=y
 # BR2_TARGET_ROOTFS_TAR is not set
 
-# --- Nasze pakiety ---
+# --- Our packages ---
 BR2_PACKAGE_SWMIRROR=y

@@ -1,8 +1,8 @@
 #!/bin/sh
 #
-# Włącza port mirroring w switchu według /etc/swmirror.conf.
-# Numer S41 = uruchamiany po sieci (S40network), choć mirroring działa
-# niezależnie od tego, czy eth0 jest podniesiony.
+# Enables port mirroring in the switch according to /etc/swmirror.conf.
+# S41 = runs after networking (S40network), although mirroring works
+# regardless of whether eth0 is up.
 
 CONF=/etc/swmirror.conf
 MIRROR_ENABLE=no

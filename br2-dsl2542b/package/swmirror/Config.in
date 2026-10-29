@@ -2,9 +2,9 @@ config BR2_PACKAGE_SWMIRROR
 	bool "swmirror"
 	depends on BR2_LINUX_KERNEL
 	help
-	  Konfiguracja port mirroringu w switchu BCM5325E przez
-	  pseudo-PHY (MDIO, ioctl SIOCGMIIREG/SIOCSMIIREG na eth0).
+	  Port mirroring configuration for the BCM5325E switch via its
+	  pseudo-PHY (MDIO, SIOCGMIIREG/SIOCSMIIREG ioctl on eth0).
 
-	  Instaluje /usr/sbin/swmirror oraz skrypt startowy
-	  /etc/init.d/S41swmirror, który przy starcie włącza mirroring
-	  według /etc/swmirror.conf.
+	  Installs /usr/sbin/swmirror and the init script
+	  /etc/init.d/S41swmirror, which enables mirroring at boot
+	  according to /etc/swmirror.conf.

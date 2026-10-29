@@ -1,192 +1,195 @@
-# DSL-2542B + Buildroot: sniffer z port mirroringiem
+# DSL-2542B + Buildroot: a port-mirroring sniffer
 
-Własny, minimalny Linux dla D-Link DSL-2542B (SoC BCM6338, switch BCM5325E,
-16 MB RAM, 4 MB NOR), który po starcie sam włącza port mirroring.
+A custom, minimal Linux for the D-Link DSL-2542B (BCM6338 SoC, BCM5325E switch,
+16 MB RAM, 4 MB NOR) that enables port mirroring by itself at boot.
 
-Etap 1 (ten): system startuje **z RAM-u przez TFTP**, flash zostaje nietknięty.
-Etap 2 (później): zapis do flasha.
+Stage 1 (this one): the system boots **from RAM over TFTP**, the flash stays untouched.
+Stage 2 (later): writing to flash.
 
 ---
 
-## 1. Co jest w tym repozytorium
+## 1. What is in this repository
 
 ```
 br2-dsl2542b/
-├── external.desc            nazwa drzewa: DSL2542B -> zmienna $(BR2_EXTERNAL_DSL2542B_PATH)
-├── external.mk              dołącza pakiety z package/*/*.mk
-├── Config.in                dodaje nasze pakiety do menuconfig
+├── external.desc            tree name: DSL2542B -> variable $(BR2_EXTERNAL_DSL2542B_PATH)
+├── external.mk              includes the packages from package/*/*.mk
+├── Config.in                adds our packages to menuconfig
 ├── configs/
-│   └── dsl2542b_defconfig   cała konfiguracja Buildroota dla tej płytki
+│   └── dsl2542b_defconfig   the whole Buildroot configuration for this board
 ├── board/dlink/dsl2542b/
-│   ├── linux.fragment       różnice względem bcm63xx_defconfig z kernela
-│   ├── post-image.sh        robi z kernela plik dla CFE i sprawdza mapę pamięci
-│   ├── lzma-loader/         mały program ładujący kernel (z OpenWrt, GPL-2.0)
-│   └── rootfs-overlay/      pliki nadpisywane w rootfs (adres IP)
-└── package/swmirror/        nasz pakiet: narzędzie + skrypt startowy
+│   ├── linux.fragment       differences from the kernel's bcm63xx_defconfig
+│   ├── post-image.sh        turns the kernel into a file for CFE and checks the memory map
+│   ├── lzma-loader/         a small program that loads the kernel (from OpenWrt, GPL-2.0)
+│   └── rootfs-overlay/      files overlaid onto the rootfs (IP address)
+└── package/swmirror/        our package: the tool + init script
 ```
 
-To jest **drzewo zewnętrzne** (*br2-external*). Buildroot pozostaje
-nietknięty (jest submodułem repo `eth_sniffer`), a wszystko, co dotyczy tej
-płytki, leży obok niego. Buildroot wczytuje to drzewo przez `BR2_EXTERNAL=...`
-i zapamiętuje ścieżkę w `output/`, więc później wystarcza samo `make`
-w katalogu `output/` (Buildroot tworzy tam mały Makefile przekierowujący).
+This is an **external tree** (*br2-external*). Buildroot stays untouched
+(it is a submodule of the `eth_sniffer` repo), and everything specific to this
+board lives next to it. Buildroot loads this tree via `BR2_EXTERNAL=...` and
+remembers the path in `output/`, so afterwards a plain `make` in the `output/`
+directory is enough (Buildroot creates a small forwarding Makefile there).
 
 ---
 
-## 2. Buildroot w pigułce
+## 2. Buildroot in a nutshell
 
-Buildroot to zestaw Makefile'i, który z samych źródeł buduje kompletny system:
+Buildroot is a set of Makefiles that builds a complete system from source:
 
 ```
- 1. toolchain       binutils + gcc + uClibc-ng dla MIPS (output/host/)
- 2. pakiety         busybox, swmirror, ...   -> output/target/  (przyszły rootfs)
+ 1. toolchain       binutils + gcc + uClibc-ng for MIPS (output/host/)
+ 2. packages        busybox, swmirror, ...   -> output/target/  (the future rootfs)
  3. rootfs          output/target/ -> rootfs.cpio
- 4. kernel          z rootfs.cpio wbudowanym jako initramfs -> vmlinux.bin
+ 4. kernel          with rootfs.cpio built in as an initramfs -> vmlinux.bin
  5. post-image.sh   vmlinux.bin -> dsl2542b-ramboot.elf      (output/images/)
 ```
 
-Najważniejsze katalogi w `output/`:
+The most important directories in `output/`:
 
-| Katalog | Zawartość |
+| Directory | Contents |
 |---|---|
-| `build/<pakiet>-<wersja>/` | rozpakowane i zbudowane źródła każdego pakietu |
-| `host/` | narzędzia działające na twoim PC, w tym cross-kompilator `mips-buildroot-linux-uclibc-gcc` |
-| `staging/` | sysroot: nagłówki i biblioteki dla cross-kompilacji |
-| `target/` | to, co trafi do rootfs routera (bez nagłówków, binarki bez symboli) |
-| `images/` | gotowe obrazy |
+| `build/<package>-<version>/` | unpacked and built sources of each package |
+| `host/` | tools that run on your PC, including the cross-compiler `mips-buildroot-linux-uclibc-gcc` |
+| `staging/` | sysroot: headers and libraries for cross-compiling |
+| `target/` | what goes into the router's rootfs (no headers, stripped binaries) |
+| `images/` | the final images |
 
-Konfiguracja:
+Configuration:
 
-- `configs/dsl2542b_defconfig` to *minimalna* konfiguracja: tylko to, co
-  różni się od wartości domyślnych.
-- `make dsl2542b_defconfig` rozwija ją do pełnego `output/.config`.
-- `make menuconfig` zmienia `.config`, a `make savedefconfig` zapisuje
-  zmiany z powrotem do pliku w `configs/`.
-- Kernel konfiguruje się tak samo, ale osobno: `bcm63xx_defconfig`
-  z kernela + nasz `linux.fragment`. Podgląd przez `make linux-menuconfig`.
+- `configs/dsl2542b_defconfig` is a *minimal* configuration: only what
+  differs from the defaults.
+- `make dsl2542b_defconfig` expands it into a full `output/.config`.
+- `make menuconfig` changes `.config`, and `make savedefconfig` writes the
+  changes back to the file in `configs/`.
+- The kernel is configured the same way, but separately: the kernel's
+  `bcm63xx_defconfig` + our `linux.fragment`. Inspect it with `make linux-menuconfig`.
 
-Buildroot **nie śledzi zależności między konfiguracją a już zbudowanymi
-pakietami**. Po zmianie pakietu robisz `make <pakiet>-rebuild`, a po zmianie
-architektury albo toolchaina `make clean` i pełne budowanie od nowa.
+Buildroot **does not track dependencies between the configuration and
+packages that are already built**. After changing a package you run
+`make <package>-rebuild`, and after changing the architecture or toolchain
+`make clean` and a full rebuild.
 
 ---
 
-## 3. Budowanie (WSL / Linux)
+## 3. Building (WSL / Linux)
 
-Pakiety systemowe (Ubuntu/Debian):
+System packages (Ubuntu/Debian):
 
 ```sh
 sudo apt install build-essential git rsync bc cpio unzip file wget \
                  perl python3 libncurses-dev xz-utils
 ```
 
-**Buduj w systemie plików Linuksa** (np. `~/eth_sniffer`), nie na `/mnt/c/...`.
-Na dyskach Windowsa build jest wielokrotnie wolniejszy i potrafi się wyłożyć
-na rozróżnianiu wielkości liter.
+**Build on a Linux filesystem** (e.g. `~/eth_sniffer`), not on `/mnt/c/...`.
+On Windows drives the build is many times slower and can fail on
+case sensitivity.
 
 ```sh
-# Buildroot jest submodułem repo eth_sniffer (przypięty do tagu 2026.02.3).
+# Buildroot is a submodule of the eth_sniffer repo (pinned to tag 2026.02.3).
 cd ~/eth_sniffer
 git submodule update --init
-# O= : wyniki builda w ~/eth_sniffer/output, poza submodułem Buildroota
+# O= : build output in ~/eth_sniffer/output, outside the Buildroot submodule
 make -C buildroot O=$PWD/output BR2_EXTERNAL=$PWD/br2-dsl2542b dsl2542b_defconfig
 cd output
 make 2>&1 | tee build.log
 ```
 
-Pierwsze budowanie trwa od 30 do 60 minut, bo powstaje cały toolchain.
-Następne są szybkie. Na końcu post-image.sh wypisuje mapę pamięci:
+The first build takes 30 to 60 minutes, because the whole toolchain is built.
+Later builds are fast. At the end post-image.sh prints the memory map:
 
 ```
-=== Obraz do uruchomienia z RAM przez CFE ===
-  plik:                  .../output/images/dsl2542b-ramboot.elf
+=== Image for booting from RAM via CFE ===
+  file:                  .../output/images/dsl2542b-ramboot.elf
   ...
 ```
 
-Jeśli którakolwiek kontrola się nie powiedzie, skrypt wypisze `BŁĄD:`
-i build zakończy się błędem. To celowe, bo taki obraz zawiesiłby CFE.
+If any of the checks fails, the script prints `ERROR:` and the build fails.
+This is deliberate, because such an image would hang CFE.
 
-Przydatne polecenia (wykonywane w katalogu `output/`):
+Useful commands (run in the `output/` directory):
 
-| Polecenie | Co robi |
+| Command | What it does |
 |---|---|
-| `make swmirror-rebuild all` | przebudowuje nasz pakiet i obrazy |
-| `make linux-rebuild all` | przebudowuje kernel |
-| `make linux-menuconfig` | konfiguracja kernela (zmiany przenieś do `linux.fragment`) |
-| `make busybox-menuconfig` | wybór apletów BusyBoxa |
-| `make savedefconfig` | zapisuje `.config` z powrotem do `configs/dsl2542b_defconfig` |
+| `make swmirror-rebuild all` | rebuilds our package and the images |
+| `make linux-rebuild all` | rebuilds the kernel |
+| `make linux-menuconfig` | kernel configuration (move the changes into `linux.fragment`) |
+| `make busybox-menuconfig` | choose BusyBox applets |
+| `make savedefconfig` | writes `.config` back to `configs/dsl2542b_defconfig` |
 
 ---
 
-## 4. Mapa pamięci, czyli po co jest lzma-loader
+## 4. The memory map, or why lzma-loader exists
 
-CFE ładuje przez TFTP plik ELF i uruchamia go. Ma przy tym jedno twarde
-ograniczenie: **samo CFE siedzi w RAM-ie** pod adresami `0x80401000–0x80528000`
-(widać to w logu startowym: *Total memory used by CFE*). Plik, którego segmenty
-wypadają w tym obszarze, nadpisze CFE w trakcie ładowania.
+CFE loads an ELF file over TFTP and runs it. It has one hard limitation:
+**CFE itself lives in RAM** at `0x80401000–0x80528000` (visible in the boot
+log: *Total memory used by CFE*). A file whose segments fall into this area
+overwrites CFE while it is being loaded.
 
-Kernel 6.12 z initramfs po rozpakowaniu zajmuje kilka MB, a ma działać od
-`0x80010000`, więc bezpośrednio się nie zmieści. Rozwiązanie z OpenWrt:
+The 6.12 kernel with its initramfs takes several MB once decompressed and must
+run from `0x80010000`, so it does not fit directly. The OpenWrt solution:
 
 ```
- Krok 1: CFE ładuje loader.elf (mały: kod + kernel skompresowany LZMA)
+ Step 1: CFE loads loader.elf (small: code + LZMA-compressed kernel)
    0x80010000 [loader + kernel.lzma]          0x80401000 [CFE ........]
 
- Krok 2: loader kopiuje się wyżej (head.S)
-   0x80010000 [stara kopia]   0x80a00000 [loader + kernel.lzma]
+ Step 2: the loader copies itself higher up (head.S)
+   0x80010000 [old copy]      0x80a00000 [loader + kernel.lzma]
 
- Krok 3: loader rozpakowuje kernel na właściwe miejsce i do niego skacze
+ Step 3: the loader decompresses the kernel to its proper place and jumps to it
    0x80010000 [kernel ............]           0x80a00000 [loader]
 ```
 
-Po kroku 3 CFE i loader nie są już potrzebne, więc kernel używa całego RAM-u.
-`post-image.sh` sprawdza wszystkie trzy warunki:
+After step 3 neither CFE nor the loader is needed, so the kernel uses all of RAM.
+`post-image.sh` checks all three conditions:
 
-1. loader.elf kończy się przed `0x80401000`,
-2. rozpakowany kernel (łącznie z `.bss`, czyli symbolem `_end`) kończy się przed `0x80a00000`,
-3. loader po przeniesieniu mieści się w 16 MB.
+1. loader.elf ends before `0x80401000`,
+2. the decompressed kernel (including `.bss`, i.e. the `_end` symbol) ends before `0x80a00000`,
+3. the relocated loader fits in 16 MB.
 
-Kompresja: `xz --format=lzma` tworzy nagłówek z rozmiarem „nieznany”,
-a dekoder w loaderze potrzebuje dokładnego rozmiaru wyjścia, więc skrypt wpisuje
-go do nagłówka (bajty 5–12, little-endian).
+Compression: `xz --format=lzma` writes a header with the size set to "unknown",
+but the loader's decoder needs the exact output size, so the script patches it
+into the header (bytes 5–12, little-endian).
 
 ---
 
-## 5. Uruchomienie z RAM-u przez CFE (bez flashowania)
+## 5. Booting from RAM via CFE (no flashing)
 
-### Serwer TFTP
+### TFTP server
 
-Najprościej postawić go na Raspberry Pi w sieci LAN routera:
+The easiest option is to run it on a Raspberry Pi on the router's LAN:
 
 ```sh
-sudo apt install tftpd-hpa             # katalog: /srv/tftp
+sudo apt install tftpd-hpa             # directory: /srv/tftp
 scp output/images/dsl2542b-ramboot.elf pi@192.168.1.5:/tmp/
 ssh pi@192.168.1.5 sudo cp /tmp/dsl2542b-ramboot.elf /srv/tftp/
 ```
 
-Serwer w WSL2 domyślnie siedzi za NAT-em Windowsa i router się do niego nie
-dostanie. Jeśli chcesz serwować z laptopa, użyj programu pod Windowsem
-(np. Tftpd64) albo włącz w WSL tryb sieci „mirrored”.
+A server in WSL2 sits behind Windows NAT by default and the router cannot reach
+it. If you want to serve from the laptop, use a Windows program
+(e.g. Tftpd64) or enable "mirrored" networking mode in WSL.
 
-### Ustawienia CFE
+### CFE settings
 
-Na konsoli UART przerwij autostart dowolnym klawiszem i wpisz `c`:
+On the UART console, interrupt autoboot with any key and type `c`:
 
 ```
 Board IP address                  : 192.168.1.1:ffffff00
-Host IP address                   : 192.168.1.5          <- serwer TFTP
+Host IP address                   : 192.168.1.5          <- TFTP server
 Run from flash/host (f/h)         : h
 Default host run file name        : dsl2542b-ramboot.elf
 ```
 
-Pozostałe pola zostaw bez zmian (Enter). Potem `r`.
+Leave the remaining fields unchanged (Enter), including
+"Default host flash file name", which is only used by the `f` command
+(flashing). Then `r`.
 
-Flaga `h` zostaje zapisana w NVRAM, więc po każdym włączeniu zasilania router
-będzie startował twój obraz z TFTP. Przy pracy nad systemem to wygodne,
-bo po przebudowaniu wystarczy podmienić plik i zrestartować router. Żeby wrócić
-do oryginalnego firmware'u, ustaw z powrotem `f`.
+The `h` flag is saved in NVRAM, so after every power-on the router will boot
+your image from TFTP. While working on the system this is convenient: after a
+rebuild you just replace the file and restart the router. To go back to the
+original firmware, set `f` again.
 
-### Czego się spodziewać na UART
+### What to expect on the UART
 
 ```
 OpenWrt kernel loader for BCM63XX
@@ -195,64 +198,66 @@ Decompressing kernel... done!
 Starting kernel at 80010000...
 
 Linux version 6.12.91 ...
-CFE version: 1.0.37-8.7
+board_bcm963xx: CFE version: 1.0.37-8.7
 ...
-bcm63xx_enet bcm63xx_enet.0 eth0: ...
+eth0: link forced UP - 100/full - flow control off/off
+...
+Starting port mirroring (lan1 -> lan4, both): OK
 ...
 DSL-2542B / Buildroot
 dsl2542b login: root
 # swmirror status
 ```
 
-Logowanie: `root`, bez hasła.
+Login: `root`, no password.
 
 ---
 
 ## 6. swmirror
 
 ```sh
-swmirror status                  # link portów i stan mirroringu
-swmirror on lan4 lan1            # ruch z LAN1 (oba kierunki) -> LAN4
-swmirror on lan4 lan1,lan2 rx    # tylko ruch odbierany na LAN1 i LAN2
-swmirror on lan4 cpu             # cały ruch procesora routera
+swmirror status                  # port link and mirroring state
+swmirror on lan4 lan1            # traffic from LAN1 (both directions) -> LAN4
+swmirror on lan4 lan1,lan2 rx    # only traffic received on LAN1 and LAN2
+swmirror on lan4 cpu             # all traffic of the router CPU
 swmirror off
-swmirror read 0x02 0x10          # surowy rejestr: strona, adres
+swmirror read 0x02 0x10          # raw register: page, address
 swmirror write 0x02 0x10 0x8001
 ```
 
-Przy starcie mirroring włącza `/etc/init.d/S41swmirror` według
-`/etc/swmirror.conf` (domyślnie LAN1 -> LAN4). Plik domyślny jest w
+At boot, mirroring is enabled by `/etc/init.d/S41swmirror` according to
+`/etc/swmirror.conf` (LAN1 -> LAN4 by default). The default file is in
 `package/swmirror/swmirror.conf`.
 
-Narzędzie robi dokładnie to samo, co wcześniej `setmem`, tylko przez
-sterownik: ioctl `SIOCGMIIREG`/`SIOCSMIIREG` na `eth0` z adresem PHY 30.
-Sterownik `bcm63xx_enet` dla płytki 96338W nie ma podpiętego PHY, więc
-przekazuje dowolny adres PHY prosto na magistralę MDIO. W przeciwieństwie do
-stockowego firmware'u nic nie odpytuje MDIO w tle, więc nie ma wyścigu
-o rejestr.
+The tool does exactly what `setmem` did before, but through the driver:
+the `SIOCGMIIREG`/`SIOCSMIIREG` ioctls on `eth0` with PHY address 30.
+The `bcm63xx_enet` driver has no PHY attached on the 96338W board, so it
+passes any PHY address straight to the MDIO bus. Unlike the stock firmware,
+nothing polls MDIO in the background, so there is no race for the register.
 
-Mapowanie portów: LAN1 = port 3 i LAN4 = port 0 sprawdzone na sprzęcie,
-LAN2 = 2 i LAN3 = 1 wzięte z konfiguracji OpenWrt dla 96338W.
+Port mapping: LAN1 = port 3 and LAN4 = port 0 verified on hardware,
+LAN2 = 2 and LAN3 = 1 taken from the OpenWrt configuration for 96338W.
 
 ---
 
-## 7. Gdy coś nie działa
+## 7. When something does not work
 
-| Objaw | Co sprawdzić |
+| Symptom | What to check |
 |---|---|
-| CFE nie pobiera pliku | Host IP i nazwa pliku w `c`, czy serwer TFTP odpowiada (`tftp` z innej maszyny), czy kabel jest w porcie LAN |
-| CFE pobiera, ale odrzuca plik | Wklej dokładny komunikat. Jest szansa, że ta wersja CFE oczekuje innego formatu niż ELF |
-| Po `Starting kernel` cisza | Kernel startuje, ale nie ma konsoli. Sprawdź `CONFIG_CMDLINE` i `CONFIG_SERIAL_BCM63XX_CONSOLE` w `make linux-menuconfig` |
-| `unknown bcm963xx board` | Kernel nie rozpoznał Board ID z NVRAM, który powinien brzmieć `96338W` (polecenie `p` w CFE) |
-| Brak sieci po starcie | Switch jest skonfigurowany przez CFE, kernel go nie rusza. Sprawdź `swmirror status` i `ip addr` |
-| `swmirror`: `Operation not supported` | ioctl nie dotarł do bcm63xx_enet. Sprawdź, czy `eth0` istnieje (`ip link`) |
+| CFE does not download the file | Host IP and file name in `c`, whether the TFTP server responds (`tftp` from another machine), whether the cable is in a LAN port |
+| CFE downloads the file but rejects it | Note the exact message. This CFE version might expect a format other than ELF |
+| Silence after `Starting kernel` | The kernel is starting but has no console. Check `CONFIG_CMDLINE` and `CONFIG_SERIAL_BCM63XX_CONSOLE` in `make linux-menuconfig` |
+| `unknown bcm963xx board` | The kernel did not recognise the Board ID from NVRAM, which should be `96338W` (`p` command in CFE) |
+| `nvram checksum failed` | Harmless on this board: the old CFE uses a different NVRAM layout than mainline expects, but the board name is still read correctly |
+| No network after boot | The switch is configured by CFE, the kernel does not touch it. Check `swmirror status` and `ip addr` |
+| `swmirror`: `Operation not supported` | The ioctl did not reach bcm63xx_enet. Check that `eth0` exists (`ip link`) |
 
 ---
 
-## 8. Co dalej
+## 8. What next
 
-- **Flash:** obraz z nagłówkiem imagetag (Board ID `6338W`), wgrywany przez `f`
-  w CFE albo przez web recovery. Kopia zapasowa oryginalnego flasha jest już zrobiona.
-- **Dostęp po sieci:** `telnetd` z BusyBoxa albo `dropbear` (SSH).
-- **Ćwiczenie z LED:** `ls /sys/class/leds/` i
-  `echo heartbeat > /sys/class/leds/<dioda>/trigger`.
+- **Flash:** an image with an imagetag header (Board ID `6338W`), written with
+  `f` in CFE or through web recovery. A backup of the original flash is already done.
+- **Network access:** BusyBox `telnetd` or `dropbear` (SSH).
+- **LED exercise:** `ls /sys/class/leds/` and
+  `echo heartbeat > /sys/class/leds/<led>/trigger`.

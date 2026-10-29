@@ -1,16 +1,16 @@
 /*
- * Minimalne makra asemblerowe dla head.S.
+ * Minimal assembler macros for head.S.
  *
- * Oryginalny loader z OpenWrt dołączał <asm/asm.h> z drzewa kernela.
- * Potrzebujemy z niego tylko LEAF/END, więc zamiast ciągnąć nagłówki kernela
- * (które zależą od jego konfiguracji) definiujemy je tutaj.
+ * The original OpenWrt loader included <asm/asm.h> from the kernel tree.
+ * We only need LEAF/END from it, so instead of pulling in kernel headers
+ * (which depend on the kernel configuration) we define them here.
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
 #ifndef _LOADER_ASM_H
 #define _LOADER_ASM_H
 
-/* Funkcja-liść: nie wywołuje innych funkcji, nie ma ramki stosu. */
+/* Leaf function: calls no other functions, has no stack frame. */
 #define LEAF(symbol)				\
 	.globl	symbol;				\
 	.align	2;				\

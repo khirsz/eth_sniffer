@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Zrzut całego flasha DSL-2542B (BCM6338, 4 MB NOR) przez UART,
-korzystając z `dumpmem` w shellu stockowego firmware'u.
+Dump the whole DSL-2542B flash (BCM6338, 4 MB NOR) over the UART,
+using `dumpmem` in the stock firmware shell.
 
-Format linii dumpmem (bajty w kolejności pamięci, więc bez problemu z endianness):
+dumpmem line format (bytes in memory order, so no endianness issues):
   bfc00000: 10 00 02 79 00 00 ...    ...y............
 
-Wymagania: pip install pyserial
-Przed uruchomieniem: zamknij picocom/minicom i zostaw router w shellu (prompt "# ").
+Requirements: pip install pyserial
+Before running: close picocom/minicom and leave the router in the shell (prompt "# ").
 
-Użycie:
+Usage:
   python3 dump_flash.py /dev/ttyUSB0 flash.bin
-  python3 dump_flash.py /dev/ttyUSB0 flash.bin --start-chunk 17   # wznowienie
+  python3 dump_flash.py /dev/ttyUSB0 flash.bin --start-chunk 17   # resume
 """
 import argparse
 import os
@@ -23,13 +23,13 @@ import serial
 
 BASE = 0xBFC00000
 SIZE = 4 * 1024 * 1024
-CHUNK = 64 * 1024          # jednostka zapisu/wznawiania (~30 s przy 115200)
-SUB = 1024                 # dumpmem przyjmuje length < 2048
+CHUNK = 64 * 1024          # unit of saving/resuming (~30 s at 115200)
+SUB = 1024                 # dumpmem accepts length < 2048
 RETRIES = 3
-IDLE_TIMEOUT = 8.0         # s bez nowych danych = problem
+IDLE_TIMEOUT = 8.0         # s without new data = a problem
 
 LINE_RE = re.compile(rb'^([0-9a-fA-F]{8}):((?: [0-9a-fA-F]{2}){16})')
-PROMPT_RE = re.compile(rb'[\r\n]# ?')   # prompt msh "# " na początku linii
+PROMPT_RE = re.compile(rb'[\r\n]# ?')   # msh prompt "# " at the start of a line
 
 
 class NoPrompt(Exception):
@@ -39,7 +39,7 @@ class NoPrompt(Exception):
 
 
 def drain(ser, quiet=0.5):
-    """Wyrzuca wszystko, co jeszcze leci z portu, aż do `quiet` s ciszy."""
+    """Discard everything still arriving on the port until `quiet` s of silence."""
     last = time.monotonic()
     while time.monotonic() - last < quiet:
         if ser.read(4096):
@@ -47,7 +47,7 @@ def drain(ser, quiet=0.5):
 
 
 def read_until(ser, done):
-    """Czyta, aż done(buf) zwróci True; przy ciszy > IDLE_TIMEOUT rzuca NoPrompt z odbiorem."""
+    """Read until done(buf) returns True; on silence > IDLE_TIMEOUT raise NoPrompt with what was received."""
     buf = bytearray()
     last = time.monotonic()
     while True:
@@ -58,7 +58,7 @@ def read_until(ser, done):
             if done(buf):
                 return bytes(buf)
         elif time.monotonic() - last > IDLE_TIMEOUT:
-            raise NoPrompt(f"brak promptu, odebrano {len(buf)} B", buf)
+            raise NoPrompt(f"no prompt, received {len(buf)} B", buf)
 
 
 def sync(ser):
@@ -69,7 +69,7 @@ def sync(ser):
 
 
 def dump_block(ser, addr, length):
-    """Jedno wywołanie dumpmem. Koniec = wszystkie linie danych + prompt po ostatniej z nich."""
+    """One dumpmem call. Done = all data lines + a prompt after the last of them."""
     last_line = b'%08x:' % (addr + length - 16)
 
     def done(buf):
@@ -99,11 +99,11 @@ def parse_chunk(raw, start, length):
             continue
         addr = int(m.group(1), 16)
         if addr != expected:
-            raise ValueError(f"oczekiwano 0x{expected:08x}, jest 0x{addr:08x}")
+            raise ValueError(f"expected 0x{expected:08x}, got 0x{addr:08x}")
         out += bytes(int(b, 16) for b in m.group(2).split())
         expected += 16
     if len(out) != length:
-        raise ValueError(f"odebrano {len(out)} B zamiast {length}")
+        raise ValueError(f"received {len(out)} B instead of {length}")
     return bytes(out)
 
 
@@ -116,7 +116,7 @@ def main():
     args = ap.parse_args()
 
     n_chunks = SIZE // CHUNK
-    # plik prealokowany, każdy kawałek zapisywany od razu na swoje miejsce
+    # preallocated file, each chunk is written straight to its place
     if not os.path.exists(args.out):
         with open(args.out, 'wb') as f:
             f.truncate(SIZE)
@@ -139,27 +139,27 @@ def main():
                     if isinstance(e, NoPrompt):
                         raw = e.buf
                     dbg = save_debug(raw, i, attempt)
-                    print(f'  kawałek {i}: próba {attempt} nieudana ({e}), surowe dane: {dbg}')
+                    print(f'  chunk {i}: attempt {attempt} failed ({e}), raw data: {dbg}')
                     time.sleep(1)
                     try:
                         sync(ser)
                     except NoPrompt as e2:
-                        print(f'  synchronizacja nieudana ({e2})')
+                        print(f'  resync failed ({e2})')
             else:
-                sys.exit(f'Przerwano na kawałku {i}. Wznów: --start-chunk {i}')
+                sys.exit(f'Aborted at chunk {i}. Resume with: --start-chunk {i}')
 
             f.seek(i * CHUNK)
             f.write(data)
             f.flush()
             done = i + 1 - args.start_chunk
             eta = (time.monotonic() - t0) / done * (n_chunks - i - 1)
-            print(f'[{i + 1}/{n_chunks}] 0x{addr:08x} OK, zostało ~{eta / 60:.1f} min')
+            print(f'[{i + 1}/{n_chunks}] 0x{addr:08x} OK, ~{eta / 60:.1f} min left')
 
     with open(args.out, 'rb') as f:
         head = f.read(4)
-    status = 'OK (skok MIPS na wektorze resetu CFE)' if head == b'\x10\x00\x02\x79' \
-        else f'UWAGA: nieoczekiwany początek {head.hex()}'
-    print(f'Gotowe: {args.out}, początek: {status}')
+    status = 'OK (MIPS branch at the CFE reset vector)' if head == b'\x10\x00\x02\x79' \
+        else f'WARNING: unexpected start {head.hex()}'
+    print(f'Done: {args.out}, start: {status}')
 
 
 if __name__ == '__main__':
