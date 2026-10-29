@@ -31,6 +31,15 @@
  *   0x1C Egress Mirror Control (Table 67)
  *        bits 10:0  OUT_MIRROR_MASK - ports whose TRANSMITTED traffic is copied
  * Port bits: 0-4 = 10/100 ports, 8 = MII/IMP (the router CPU).
+ *
+ * Port-Based VLAN: page 0x31 (Tables 137/138), one register per INGRESS port:
+ *   0x00 port 0, 0x02 port 1, 0x04 port 2, 0x06 port 3, 0x08 port 4,
+ *   0x10 MII port (not 0x0A!)
+ *        bits 15:9  reserved (preserved by read-modify-write)
+ *        bits 8:0   FORWARD_MASK - egress ports this port may forward to
+ *                   (bit 8 = MII, bits 4:0 = ports); default 0x1ff
+ * The ARL lookup result is ANDed with this mask, so it also filters
+ * broadcast and flooded frames.
  */
 
 #include <errno.h>
@@ -67,6 +76,11 @@
 #define REG_MIRROR_EGRESS	0x1c
 #define MIRROR_ENABLE		0x8000
 #define MIRROR_PORT_MASK	0x07ff
+
+/* Page 0x31: Port-Based VLAN */
+#define PAGE_PVLAN		0x31
+#define REG_PVLAN_MII		0x10
+#define PVLAN_MASK		0x01ff
 
 /* Switch port numbers. The mapping of the case sockets was verified
  * empirically (Link Status) and matches OpenWrt (02_network for bcm96338w). */
@@ -167,7 +181,7 @@ static const char *port_name(int port)
 	for (i = 0; i < N_PORTS; i++)
 		if (port_names[i].port == port)
 			return port_names[i].name;
-	return "?";
+	return NULL;
 }
 
 static int parse_port(const char *s)
@@ -189,12 +203,16 @@ static int parse_port(const char *s)
 	return -1;
 }
 
-/* "lan1,lan2" -> bitmask */
+/* "lan1,lan2" -> bitmask; also "none" (0) and "all" (every port + MII) */
 static uint16_t parse_port_list(const char *list)
 {
 	char buf[128], *tok, *save = NULL;
 	uint16_t mask = 0;
 
+	if (!strcasecmp(list, "none"))
+		return 0;
+	if (!strcasecmp(list, "all"))
+		return PVLAN_MASK;
 	if (strlen(list) >= sizeof(buf))
 		die("port list too long");
 	strcpy(buf, list);
@@ -212,11 +230,54 @@ static void print_mask(uint16_t mask)
 	for (p = 0; p <= 10; p++) {
 		if (!(mask & (1u << p)))
 			continue;
-		printf("%s%s", first ? "" : ",", port_name(p));
+		/* Bits without a case label (port 4, bits 5-7) as raw numbers. */
+		if (port_name(p))
+			printf("%s%s", first ? "" : ",", port_name(p));
+		else
+			printf("%s%d", first ? "" : ",", p);
 		first = 0;
 	}
 	if (first)
 		printf("-");
+}
+
+static int pvlan_reg(int port)
+{
+	return port == 8 ? REG_PVLAN_MII : port * 2;
+}
+
+static void print_pvlan(void)
+{
+	size_t i;
+
+	printf("Port-based VLAN (ingress port -> allowed egress ports):\n");
+	for (i = 0; i < N_PORTS; i++) {
+		uint16_t v = sw_read16(PAGE_PVLAN, pvlan_reg(port_names[i].port));
+
+		printf("  %-4s (0x%04x): ", port_names[i].name, v);
+		print_mask(v & PVLAN_MASK);
+		printf("\n");
+	}
+}
+
+static void cmd_pvlan(const char *port_s, const char *list)
+{
+	int port = parse_port(port_s);
+	int reg = pvlan_reg(port);
+	uint16_t mask = parse_port_list(list);
+	uint16_t v;
+
+	/* "all" restores the reset default 0x1ff, which includes the port's
+	 * own bit; the switch never sends a frame back where it came from. */
+	if (strcasecmp(list, "all") && (mask & (1u << port)))
+		die("port %s cannot forward to itself", port_s);
+
+	/* Read-modify-write: keep the reserved bits 15:9. */
+	v = (sw_read16(PAGE_PVLAN, reg) & ~PVLAN_MASK) | mask;
+	sw_write16(PAGE_PVLAN, reg, v);
+
+	if (sw_read16(PAGE_PVLAN, reg) != v)
+		die("read-back does not match the written value");
 }
 
 static void cmd_status(void)
@@ -241,6 +302,8 @@ static void cmd_status(void)
 	printf("\n  egress   (0x%04x): ", eg);
 	print_mask(eg & MIRROR_PORT_MASK);
 	printf("\n");
+
+	print_pvlan();
 }
 
 static void cmd_on(const char *to_s, const char *from_s, const char *dir)
@@ -249,6 +312,8 @@ static void cmd_on(const char *to_s, const char *from_s, const char *dir)
 	uint16_t from = parse_port_list(from_s);
 	uint16_t in = 0, eg = 0;
 
+	if (!from)
+		die("empty source port list");
 	if (from & (1u << to))
 		die("the monitor port (%s) cannot also be a source", to_s);
 
@@ -297,11 +362,14 @@ static void usage(void)
 "  on TO FROM[,FROM...] [rx|tx|both]\n"
 "                                  copy traffic from ports FROM to port TO\n"
 "  off                             disable mirroring\n"
+"  pvlan                           show the port-based VLAN masks\n"
+"  pvlan PORT TO[,TO...]|none|all  set where PORT may forward frames to\n"
 "  read PAGE REG                   read a 16-bit switch register\n"
 "  write PAGE REG VALUE            write a 16-bit switch register\n"
 "\n"
 "Ports: lan1..lan4 (labels on the case), cpu (the router CPU)\n"
-"Example: swmirror on lan4 lan1 both\n"
+"Examples: swmirror on lan2 lan4 both\n"
+"          swmirror pvlan lan1 cpu\n"
 "Default interface: eth0\n", stderr);
 	exit(2);
 }
@@ -336,6 +404,10 @@ int main(int argc, char **argv)
 		cmd_status();
 	} else if (!strcmp(argv[0], "off") && argc == 1) {
 		cmd_off();
+	} else if (!strcmp(argv[0], "pvlan") && argc == 1) {
+		print_pvlan();
+	} else if (!strcmp(argv[0], "pvlan") && argc == 3) {
+		cmd_pvlan(argv[1], argv[2]);
 	} else if (!strcmp(argv[0], "read") && argc == 3) {
 		printf("0x%04x\n", sw_read16(parse_num(argv[1], 0xff),
 					     parse_num(argv[2], 0xff)));

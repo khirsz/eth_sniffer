@@ -26,8 +26,8 @@ endef
 
 # Called only when the system uses BusyBox init / SysV init.
 define SWMIRROR_INSTALL_INIT_SYSV
-	$(INSTALL) -D -m 0755 $(SWMIRROR_PKGDIR)/S41swmirror \
-		$(TARGET_DIR)/etc/init.d/S41swmirror
+	$(INSTALL) -D -m 0755 $(SWMIRROR_PKGDIR)/S38swmirror \
+		$(TARGET_DIR)/etc/init.d/S38swmirror
 endef
 
 $(eval $(generic-package))

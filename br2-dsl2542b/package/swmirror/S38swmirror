@@ -1,0 +1,63 @@
+#!/bin/sh
+#
+# Configures the switch according to /etc/swmirror.conf: port-based VLAN
+# isolation first, then port mirroring.
+# S38 = runs BEFORE networking (S40network): the isolation must be in place
+# before eth0 comes up, otherwise the router's ARP/DHCP would briefly reach
+# the tapped segment. The MII ioctls work while eth0 is still down.
+
+CONF=/etc/swmirror.conf
+PVLAN_ENABLE=no
+MIRROR_ENABLE=no
+MIRROR_DIR=both
+[ -r "$CONF" ] && . "$CONF"
+
+PORTS="lan1 lan2 lan3 lan4 cpu"
+
+start_pvlan() {
+	[ "$PVLAN_ENABLE" = yes ] || return 0
+	printf "Configuring switch port isolation: "
+	for p in $PORTS; do
+		# PVLAN_LAN1, PVLAN_CPU, ...; unset = leave the register alone
+		eval mask=\$PVLAN_$(echo "$p" | tr a-z A-Z)
+		[ -n "$mask" ] || continue
+		if ! swmirror pvlan "$p" "$mask"; then
+			echo "FAIL ($p)"
+			return 1
+		fi
+	done
+	echo "OK"
+}
+
+start_mirror() {
+	[ "$MIRROR_ENABLE" = yes ] || return 0
+	printf "Starting port mirroring (%s -> %s, %s): " \
+		"$MIRROR_FROM" "$MIRROR_TO" "$MIRROR_DIR"
+	if swmirror on "$MIRROR_TO" "$MIRROR_FROM" "$MIRROR_DIR" >/dev/null; then
+		echo "OK"
+	else
+		echo "FAIL"
+		return 1
+	fi
+}
+
+start() {
+	start_pvlan
+	start_mirror
+}
+
+stop() {
+	printf "Stopping port mirroring, restoring port isolation defaults: "
+	swmirror off || { echo "FAIL"; return 1; }
+	for p in $PORTS; do
+		swmirror pvlan "$p" all || { echo "FAIL ($p)"; return 1; }
+	done
+	echo "OK"
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart|reload) stop; start ;;
+	*) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

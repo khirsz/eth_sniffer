@@ -1,8 +1,9 @@
-# Static router address on the LAN (BusyBox ifupdown, S40network script).
+# Static router address on the configuration port LAN1 (BusyBox ifupdown,
+# S40network script). Only LAN1 reaches the CPU, see /etc/swmirror.conf.
 auto lo
 iface lo inet loopback
 
 auto eth0
 iface eth0 inet static
-	address 192.168.1.1
+	address 192.168.15.1
 	netmask 255.255.255.0

@@ -6,5 +6,5 @@ config BR2_PACKAGE_SWMIRROR
 	  pseudo-PHY (MDIO, SIOCGMIIREG/SIOCSMIIREG ioctl on eth0).
 
 	  Installs /usr/sbin/swmirror and the init script
-	  /etc/init.d/S41swmirror, which enables mirroring at boot
+	  /etc/init.d/S38swmirror, which sets up port isolation and mirroring at boot
 	  according to /etc/swmirror.conf.

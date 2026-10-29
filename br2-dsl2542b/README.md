@@ -200,34 +200,119 @@ Starting kernel at 80010000...
 Linux version 6.12.91 ...
 board_bcm963xx: CFE version: 1.0.37-8.7
 ...
+Configuring switch port isolation: OK
+Starting port mirroring (lan4 -> lan2, both): OK
+...
 eth0: link forced UP - 100/full - flow control off/off
 ...
-Starting port mirroring (lan1 -> lan4, both): OK
+Starting udhcpd: OK
+Starting dropbear sshd: OK
 ...
 DSL-2542B / Buildroot
 dsl2542b login: root
-# swmirror status
 ```
 
-Login: `root`, no password.
+Login: `root`, password `sniffer` (`BR2_TARGET_GENERIC_ROOT_PASSWD` in the
+defconfig), both on the UART and over SSH. After login a banner shows the
+port roles, the current switch state and how to change it
+(`/etc/profile.d/sniffer.sh`).
+
+### SSH from the laptop
+
+Plug the laptop into **LAN1**. It gets an address from 192.168.15.100-150
+(BusyBox `udhcpd`), without a default route or DNS, so its internet access
+over Wi-Fi keeps working. Then:
+
+```sh
+ssh root@192.168.15.1
+```
+
+The root filesystem is an initramfs in RAM, so dropbear generates a new host
+key at every boot and ssh will complain about a changed key. For this
+lab device it is fine to skip the check, e.g. in `~/.ssh/config`:
+
+```
+Host dsl2542b
+    HostName 192.168.15.1
+    User root
+    UserKnownHostsFile /dev/null
+    StrictHostKeyChecking no
+```
+
+Note: CFE keeps its own address (192.168.1.1 for TFTP) independent of Linux.
+Once Linux runs, only LAN1 reaches the CPU, so the TFTP server (Pi) and the
+laptop must share LAN1 (through a small external switch) if both are needed.
 
 ---
 
-## 6. swmirror
+## 6. Port layout and swmirror
+
+### Default layout: a passive tap
+
+| Case | Switch port | Role |
+|---|---|---|
+| LAN1 | 3 | configuration: SSH + DHCP, 192.168.15.1, talks only to the CPU |
+| LAN2 | 2 | capture: Wireshark laptop, copy of LAN4 traffic (rx+tx) |
+| LAN3 | 1 | far side of the tapped link |
+| LAN4 | 0 | device under observation |
+| CPU (MII) | 8 | router Linux, talks only to LAN1 |
+
+LAN4 and LAN3 are switched in hardware as if joined by a cable; the switch
+also copies every frame LAN4 receives and sends to LAN2. The CPU never
+touches that traffic, so the tap runs at full wire speed.
+
+Two switch features make this work:
+
+**Port mirroring** (page 0x02, see the comment at the top of `swmirror.c`):
+ingress `0x12 = 0x0001` and egress `0x1C = 0x0001` select LAN4 (bit 0),
+capture `0x10 = 0x8004` = `MIRROR_ENABLE` (bit 15) | LAN2 (bit 2).
+`CAPTURE_PORT` has a bitmask format, but the datasheet (Table 64) says it
+identifies a *single unique port*: **only one capture port is possible.**
+LAN4 at 100 Mbit/s full duplex can produce 2x100 Mbit/s, while LAN2 can
+send only 100 Mbit/s, so under heavy load some copies are dropped.
+
+**Port-based VLAN** (page 0x31, Tables 137/138): one 16-bit register per
+INGRESS port, `[8:0] FORWARD_MASK` = the egress ports this port may send to
+(bit 8 = MII/CPU, bits 4:0 = ports), `[15:9]` reserved. Register addresses:
+port N at `N*2`, but the MII port at **`0x10`**. The switch ANDs the ARL
+forwarding decision with this mask, so it filters broadcast and flooding too.
+
+| Reg | Ingress port | Mask | Meaning |
+|---|---|---|---|
+| 0x00 | LAN4 (0) | `0x0002` | only -> LAN3 |
+| 0x02 | LAN3 (1) | `0x0001` | only -> LAN4 |
+| 0x04 | LAN2 (2) | `0x0000` | the capture laptop cannot send anywhere |
+| 0x06 | LAN1 (3) | `0x0100` | only -> CPU |
+| 0x10 | CPU (8)  | `0x0008` | only -> LAN1, so DHCP/SSH stay on LAN1 |
+
+Port 4 has no socket on this board and keeps its reset value.
+
+### swmirror
 
 ```sh
-swmirror status                  # port link and mirroring state
-swmirror on lan4 lan1            # traffic from LAN1 (both directions) -> LAN4
-swmirror on lan4 lan1,lan2 rx    # only traffic received on LAN1 and LAN2
-swmirror on lan4 cpu             # all traffic of the router CPU
+swmirror status                  # link, mirroring and PVLAN state
+swmirror on lan2 lan4            # traffic of LAN4 (both directions) -> LAN2
+swmirror on lan2 lan4,lan3 rx    # only traffic received on LAN4 and LAN3
 swmirror off
+swmirror pvlan                   # show the PVLAN masks
+swmirror pvlan lan3 lan4         # LAN3 may forward only to LAN4
+swmirror pvlan lan2 none         # LAN2 may not forward anywhere
+swmirror pvlan lan2 all          # reset value 0x1ff
 swmirror read 0x02 0x10          # raw register: page, address
-swmirror write 0x02 0x10 0x8001
+swmirror write 0x02 0x10 0x8004
 ```
 
-At boot, mirroring is enabled by `/etc/init.d/S41swmirror` according to
-`/etc/swmirror.conf` (LAN1 -> LAN4 by default). The default file is in
-`package/swmirror/swmirror.conf`.
+`pvlan` does a read-modify-write (keeps bits 15:9) and reads the register
+back, the same way `on` checks its writes.
+
+At boot `/etc/init.d/S38swmirror` applies `/etc/swmirror.conf`: first the
+`PVLAN_*` masks, then mirroring. It runs **before** `S40network` on purpose:
+the isolation has to be in place before eth0 comes up, otherwise the router's
+ARP/DHCP would briefly reach the tapped segment. The MII ioctls work while
+eth0 is down (the kernel only checks that the device is present).
+`S38swmirror stop` disables mirroring and restores every mask to `all`.
+The default file is in `package/swmirror/swmirror.conf`; changes made on the
+router are lost at reboot (initramfs).
 
 The tool does exactly what `setmem` did before, but through the driver:
 the `SIOCGMIIREG`/`SIOCSMIIREG` ioctls on `eth0` with PHY address 30.
@@ -251,6 +336,9 @@ LAN2 = 2 and LAN3 = 1 taken from the OpenWrt configuration for 96338W.
 | `nvram checksum failed` | Harmless on this board: the old CFE uses a different NVRAM layout than mainline expects, but the board name is still read correctly |
 | No network after boot | The switch is configured by CFE, the kernel does not touch it. Check `swmirror status` and `ip addr` |
 | `swmirror`: `Operation not supported` | The ioctl did not reach bcm63xx_enet. Check that `eth0` exists (`ip link`) |
+| No DHCP / SSH on LAN1 | `swmirror pvlan` on the UART: LAN1 must be `cpu`, CPU must be `lan1`. `ps` should show `udhcpd` and `dropbear` |
+| LAN4 and LAN3 do not see each other | `swmirror pvlan`: LAN4 -> `lan3`, LAN3 -> `lan4`. Link of both ports in `swmirror status` |
+| Nothing arrives on LAN2 | Mirroring state in `swmirror status`. If it is enabled but LAN2 stays silent, the PVLAN masks may also filter mirrored copies on this chip: try `swmirror pvlan lan4 lan3,lan2` and `swmirror pvlan lan3 lan4,lan2` |
 
 ---
 
@@ -258,6 +346,9 @@ LAN2 = 2 and LAN3 = 1 taken from the OpenWrt configuration for 96338W.
 
 - **Flash:** an image with an imagetag header (Board ID `6338W`), written with
   `f` in CFE or through web recovery. A backup of the original flash is already done.
-- **Network access:** BusyBox `telnetd` or `dropbear` (SSH).
+- **Active mode:** put the CPU into the LAN4 <-> LAN3 path (802.1Q per-port
+  VLANs on page 0x34 + a Linux bridge), so frames can be inspected or changed
+  in software. Possible on this hardware, but limited by the 240 MHz CPU to a
+  few Mbit/s.
 - **LED exercise:** `ls /sys/class/leds/` and
   `echo heartbeat > /sys/class/leds/<led>/trigger`.

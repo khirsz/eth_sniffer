@@ -1,0 +1,7 @@
+# BusyBox configuration fragment applied on top of Buildroot's
+# package/busybox/busybox.config (BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES).
+
+# DHCP server for the configuration port LAN1 (/etc/udhcpd.conf) and the
+# tool that lists its leases.
+CONFIG_UDHCPD=y
+CONFIG_DUMPLEASES=y
