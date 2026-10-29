@@ -23,6 +23,10 @@ if [ -n "$PS1" ]; then
  Careful: keep PVLAN_LAN1=cpu and PVLAN_CPU=lan1, or SSH stops working
  (the UART console always works).
 
+ Plain port mirroring (all ports in one LAN, mirroring stays on):
+   PVLAN_ENABLE=no in /etc/swmirror.conf, then reboot, or now:
+   for p in lan1 lan2 lan3 lan4 cpu; do swmirror pvlan $p all; done
+
  The root filesystem lives in RAM: every change, including passwd,
  is lost at reboot. Permanent defaults: br2-dsl2542b/package/swmirror/
  swmirror.conf in the build tree, then rebuild.

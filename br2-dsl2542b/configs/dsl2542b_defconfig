@@ -58,3 +58,11 @@ BR2_TARGET_ROOTFS_INITRAMFS=y
 
 # --- Our packages ---
 BR2_PACKAGE_SWMIRROR=y
+
+# --- Host tools for the flash image (post-image.sh) ---
+# lzma_alone (LZMA SDK): CFE's decompressor wants a 4 MB dictionary and no
+# end marker, which xz cannot produce (same parameters as OpenWrt).
+BR2_PACKAGE_HOST_LZMA_ALONE=y
+# imagetag (OpenWrt firmware-utils): the 256-byte Broadcom tag CFE checks
+# before flashing and reads at boot to find the kernel.
+BR2_PACKAGE_HOST_FIRMWARE_UTILS=y

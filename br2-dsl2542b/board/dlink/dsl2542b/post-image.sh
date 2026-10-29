@@ -81,6 +81,43 @@ if [ "$LOADER_RUN_END" -ge $((RAM_END)) ]; then
 	fail=1
 fi
 
+# --- 4. Image for flashing via CFE ("f" command) -----------------------------
+# Booting from flash, CFE reads the Broadcom tag at 0xBFC10000, finds the
+# "kernel" through it, decompresses it with its own LZMA decoder to the load
+# address from the 12-byte kernel header and jumps to the entry point.
+# The real kernel (7+ MB with .bss) would overwrite CFE at 0x80401000 while
+# CFE is still decompressing it, so the "kernel" in the tag is loader.bin:
+# exactly what loader.elf loads at LOADADDR for the RAM boot.
+#
+# CFE format (checked against the stock kernel in flash.bin): props 5d (lc=3,
+# lp=0, pb=2), 4 MB dictionary, no 8-byte size field. lzma_alone with a known
+# input size writes no end marker, like OpenWrt's "lzma-cfe" images.
+FLASH_OUT="$BINARIES_DIR/dsl2542b-flash.bin"
+FLASH_MAX=$((0x3e0000))    # "linux" partition: 0x10000-0x3f0000
+"$HOST_DIR/bin/lzma_alone" e "$WORK/loader.bin" "$WORK/loader.lzma" \
+	-d22 -fb64 -a1 >/dev/null
+head -c 5 "$WORK/loader.lzma" > "$WORK/loader.cfe"
+tail -c +14 "$WORK/loader.lzma" >> "$WORK/loader.cfe"
+# imagetag requires a rootfs file; ours is in the initramfs, so it is empty.
+: > "$WORK/rootfs.empty"
+"$HOST_DIR/bin/imagetag" -i "$WORK/loader.cfe" -f "$WORK/rootfs.empty" \
+	-o "$FLASH_OUT" -b 96338W -c 6338 \
+	-l "$LOADADDR" -e "$LOADADDR" --info1 "DSL-2542B sniffer" >/dev/null
+
+FLASH_SIZE=$(stat -c %s "$FLASH_OUT")
+if [ "$FLASH_SIZE" -gt "$FLASH_MAX" ]; then
+	echo "ERROR: $FLASH_OUT is $FLASH_SIZE B, the linux partition holds $FLASH_MAX B" >&2
+	fail=1
+fi
+
+cat <<EOF
+
+=== Image for flashing via CFE ===
+  file:                  $FLASH_OUT
+  size:                  $FLASH_SIZE B (max $FLASH_MAX B)
+  loader.bin in CFE LZMA: $(stat -c %s "$WORK/loader.cfe") B, decompressed by CFE to $(hex $LOADADDR)
+EOF
+
 cat <<EOF
 
 === Image for booting from RAM via CFE ===
