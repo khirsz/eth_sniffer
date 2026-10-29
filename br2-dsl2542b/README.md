@@ -212,7 +212,7 @@ DSL-2542B / Buildroot
 dsl2542b login: root
 ```
 
-Login: `root`, password `sniffer` (`BR2_TARGET_GENERIC_ROOT_PASSWD` in the
+Login: `root`, password `root` (`BR2_TARGET_GENERIC_ROOT_PASSWD` in the
 defconfig), both on the UART and over SSH. After login a banner shows the
 port roles, the current switch state and how to change it
 (`/etc/profile.d/sniffer.sh`).
